@@ -1,0 +1,17 @@
+# Python virtual environment
+venv/
+perfume/
+instance/
+
+# Instance folder (if it contains local configurations or databases you don't want to share)
+# instance/ (Uncomment if you want to ignore it)
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS-specific files
+.DS_Store
+Thumbs.db
