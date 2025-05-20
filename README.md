@@ -81,3 +81,33 @@ The application is runnable, using Flask for the backend and Vue.js for the fron
     The application should then be accessible at `http://127.0.0.1:5000/` or `http://0.0.0.0:5000/`. [cite: 107]
 
 ## 6. Code Structure Overview
+
+perfumery_app/
+├── src/
+│   ├── data/
+│   │   └── saved_prompts.json
+│   ├── models/
+│   │   ├── init.py
+│   │   ├── models.py
+│   │   └── user.py
+│   ├── routes/
+│   │   ├── init.py
+│   │   ├── ai.py
+│   │   ├── category.py
+│   │   ├── formula.py
+│   │   ├── import_bp.py
+│   │   ├── ingredient.py
+│   │   └── user.py
+│   ├── static/
+│   │   ├── css/
+│   │   │   └── styles.css
+│   │   ├── js/
+│   │   │   └── app.js
+│   │   └── index.html
+│   ├── templates/
+│   │   └── index.html
+│   └── main.py
+├── requirements.txt
+├── todo.md
+├── README.md
+└── user_guide.md
