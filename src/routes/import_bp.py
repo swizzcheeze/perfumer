@@ -4,12 +4,12 @@ import json
 import csv
 import io
 import os
-import re # Make sure re is imported
+import re 
 from src.models.models import db, Ingredient, Category
 
 import_bp = Blueprint('import_bp', __name__)
 
-# --- Keyword Categorization Setup ---
+# --- Keyword Categorization Setup (as previously defined) ---
 KEYWORD_TO_CORE_CATEGORY = {
     # Citrus
     "lemon": "Citrus", "lime": "Citrus", "bergamot": "Citrus", "orange": "Citrus",
@@ -244,36 +244,22 @@ FIELDS_TO_SCAN_FOR_KEYWORDS = ['name', 'description', 'odor_profile', 'notes']
 # --- Helper Functions for Import Analysis and Processing ---
 
 def _collect_records_recursively(data, collected_records):
-    """
-    Recursively traverses a data structure (dict or list) and collects all items
-    from lists that appear to be lists of ingredient records (i.e., lists of dictionaries).
-    """
     if isinstance(data, dict):
         for key, value in data.items():
             _collect_records_recursively(value, collected_records)
     elif isinstance(data, list):
-        # Check if this list contains dictionaries (potential ingredient records)
         if data and all(isinstance(item, dict) for item in data):
-            collected_records.extend(data) # Add all items from this list
+            collected_records.extend(data) 
         else:
-            # If it's a list of other things (e.g., strings, numbers, or mixed),
-            # still iterate through its items in case they are dicts or lists to recurse into.
             for item in data:
                 _collect_records_recursively(item, collected_records)
 
 def gather_all_ingredient_records(json_data):
-    """
-    Extracts all lists of ingredient records from a parsed JSON object,
-    traversing the entire nested structure.
-    """
     all_records = []
     _collect_records_recursively(json_data, all_records)
     return all_records
 
 def _get_all_fields_from_records(records):
-    """
-    Collects all unique field names from a list of record dictionaries.
-    """
     all_field_names = set()
     for record in records:
         if isinstance(record, dict):
@@ -282,50 +268,33 @@ def _get_all_fields_from_records(records):
     return sorted(list(all_field_names))
 
 
-# --- Analysis Functions (to be called by the /api/import/analyze route) ---
+# --- Analysis Functions ---
 def analyze_json_smarter(file_content_string):
-    """
-    Analyzes JSON file content string, tries to find all data arrays,
-    extracts fields from them, and provides sample data from the first found array.
-    """
     try:
         data = json.loads(file_content_string)
-        
-        all_records = gather_all_ingredient_records(data) # Use the new recursive collector
-        
+        all_records = gather_all_ingredient_records(data)
         if not all_records:
             return {'error': 'No ingredient-like records (lists of objects) found anywhere in the JSON structure.'}
-
         fields = _get_all_fields_from_records(all_records)
         sample_data = all_records[:5] 
         item_count = len(all_records)
-        
         structure_type = "nested_data"
         if isinstance(data, list) and all(isinstance(item, dict) for item in data) and len(data) == item_count:
             structure_type = "array_at_root"
         elif isinstance(data, dict):
             structure_type = "object_at_root_with_nested_lists"
-        
         return {
-            'format': 'json',
-            'structure': structure_type, 
-            'fields': fields,
-            'item_count': item_count,
-            'sample_data': sample_data,
+            'format': 'json', 'structure': structure_type, 'fields': fields,
+            'item_count': item_count, 'sample_data': sample_data,
             'mapping_suggestion': suggest_mapping(fields)
         }
-
     except json.JSONDecodeError:
         return {'error': 'Invalid JSON format: Could not parse file.'}
     except Exception as e:
         print(f"Error during JSON analysis: {str(e)}") 
         return {'error': f'Error analyzing JSON: {str(e)}'}
 
-
 def analyze_csv_content(file_content_string):
-    """
-    Analyzes CSV file content string, extracts header and sample data.
-    """
     try:
         csvfile = io.StringIO(file_content_string)
         try:
@@ -335,34 +304,25 @@ def analyze_csv_content(file_content_string):
         except csv.Error: 
             csvfile.seek(0)
             reader = csv.reader(csvfile) 
-
         rows = list(reader)
         if not rows or len(rows) < 2 : 
             return {'error': 'Empty CSV file or CSV file contains only a header. Cannot extract records.'}
-        
         header = rows[0]
         if not all(h.strip() for h in header):
             return {'error': 'CSV header contains empty field names. Please ensure all header cells have values.'}
-
         data_rows = rows[1:6] 
         item_count = len(rows) - 1
-
         sample_data_list_of_dicts = []
         for row_idx, row in enumerate(data_rows):
             if len(row) != len(header):
                  print(f"Warning: CSV row {row_idx + 2} has {len(row)} columns, header has {len(header)}. Row will be padded/truncated.")
-            
             row_dict = {}
             for i, col_name in enumerate(header):
                 row_dict[col_name] = row[i] if i < len(row) else None
             sample_data_list_of_dicts.append(row_dict)
-            
         return {
-            'format': 'csv',
-            'structure': 'tabular',
-            'fields': header,
-            'item_count': item_count,
-            'sample_data': sample_data_list_of_dicts,
+            'format': 'csv', 'structure': 'tabular', 'fields': header,
+            'item_count': item_count, 'sample_data': sample_data_list_of_dicts,
             'mapping_suggestion': suggest_mapping(header)
         }
     except Exception as e:
@@ -371,16 +331,11 @@ def analyze_csv_content(file_content_string):
 
 @import_bp.route('/api/import/analyze', methods=['POST'])
 def analyze_import_file_route():
-    """
-    Route to analyze an uploaded file (JSON or CSV).
-    """
     if 'file' not in request.files:
         return jsonify({'error': 'No file part in the request'}), 400
-    
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'No file selected for upload'}), 400
-
     try:
         file_content_string = file.read().decode('utf-8-sig') 
     except UnicodeDecodeError:
@@ -391,24 +346,18 @@ def analyze_import_file_route():
              return jsonify({'error': f'Could not decode file content. UTF-8 and Latin-1 failed. Error: {str(e_decode)}'}), 400
     except Exception as e_read:
         return jsonify({'error': f'Could not read file: {str(e_read)}'}), 500
-
     file_ext = os.path.splitext(file.filename)[1].lower()
     analysis_result = {}
-
     if file_ext == '.json':
         analysis_result = analyze_json_smarter(file_content_string)
     elif file_ext == '.csv':
         analysis_result = analyze_csv_content(file_content_string)
     else:
         return jsonify({'error': 'Unsupported file format. Please upload JSON or CSV.'}), 400
-
     if 'error' in analysis_result:
         return jsonify(analysis_result), 400 
-    
     return jsonify(analysis_result)
 
-
-# --- Existing suggest_mapping and process_import functions ---
 def suggest_mapping(fields):
     ingredient_model_fields = {
         'name': ['name', 'ingredient_name', 'material_name', 'item_name', 'product_name', 'title', 'aroma_chemical_name', 'essential_oil_name', 'raw_material', 
@@ -456,24 +405,50 @@ def suggest_mapping(fields):
                         mapping[target_model_field] = original_f_case; break
     return mapping
 
+def normalize_unit_of_measurement(unit_str_raw):
+    if not unit_str_raw:
+        return 'g' 
+    
+    unit_str_stripped = str(unit_str_raw).strip()
+    unit_str_lower = unit_str_stripped.lower()
+    
+    if unit_str_stripped == 'ml': 
+        return 'mL'
+
+    normalized_unit = None
+    if unit_str_lower in ['ml', 'milliliter', 'milliliters', 'mls', 'mililiter', 'mililiters']:
+        normalized_unit = 'mL'
+    elif unit_str_lower in ['g', 'gram', 'grams', 'gr', 'gramme', 'grammes']:
+        normalized_unit = 'g'
+    elif unit_str_lower in ['oz', 'ounce', 'ounces', 'fl oz', 'fluid ounce']:
+        normalized_unit = 'oz'
+    elif unit_str_lower in ['drop', 'drops', 'gtt', 'drip']:
+        normalized_unit = 'drops'
+    elif unit_str_lower in ['lb', 'lbs', 'pound', 'pounds']:
+        normalized_unit = 'lb'
+    elif unit_str_lower in ['kg', 'kgs', 'kilogram', 'kilograms']:
+        normalized_unit = 'kg'
+    else:
+        if unit_str_stripped in ['mL', 'g', 'oz', 'drops', 'lb', 'kg']:
+            normalized_unit = unit_str_stripped
+        else:
+            normalized_unit = unit_str_stripped if unit_str_stripped else 'g'
+    return normalized_unit
+
 @import_bp.route('/api/import/process', methods=['POST'])
 def process_import():
     if not request.is_json:
         return jsonify({'error': 'Request must be JSON'}), 400
-    
     payload = request.json
     required_fields = ['mapping', 'import_type', 'format', 'raw_file_content'] 
     for field in required_fields:
         if field not in payload:
             return jsonify({'error': f'Missing required field: {field}'}), 400
-
     if payload['import_type'] != 'ingredients':
         return jsonify({'error': f"Import type '{payload['import_type']}' not yet supported."}), 400
 
     mapping = payload.get('mapping', {})
     records_to_process = []
-    
-    # NEW: Initialize separate lists for different types of feedback
     imported_count = 0
     skipped_count = 0 
     critical_error_list = [] 
@@ -484,16 +459,12 @@ def process_import():
             full_json_data = json.loads(payload['raw_file_content'])
             records_to_process = gather_all_ingredient_records(full_json_data) 
             if not records_to_process:
-                 # This is a critical issue if no records are found at all.
                  critical_error_list.append("No ingredient-like records (lists of objects) found anywhere in the JSON structure.")
                  return jsonify({
-                     'success': False, 
-                     'message': "No ingredient records found in the JSON structure.", 
-                     'imported_count': 0, 
-                     'skipped_count': 0, # Or len(full_json_data) if it's a list that was expected
-                     'errors': critical_error_list, 
-                     'category_warnings': []
-                }), 200 # 200 because the request was valid, but data was unusable.
+                     'success': False, 'message': "No ingredient records found in the JSON structure.", 
+                     'imported_count': 0, 'skipped_count': 0, 
+                     'errors': critical_error_list, 'category_warnings': []
+                }), 200 
         except json.JSONDecodeError: 
             critical_error_list.append("Invalid JSON format in raw_file_content.")
             return jsonify({'success': False, 'message': "Invalid JSON format.", 'errors': critical_error_list, 'imported_count': 0, 'skipped_count': 0, 'category_warnings': [] }), 400
@@ -519,67 +490,93 @@ def process_import():
         critical_error_list.append("Unsupported format or missing raw_file_content.")
         return jsonify({'success': False, 'message': "Unsupported import format.", 'errors': critical_error_list, 'imported_count': 0, 'skipped_count': 0, 'category_warnings': []}), 400
 
-    if not records_to_process and not critical_error_list: # If no records but no prior critical error
+    if not records_to_process and not critical_error_list: 
         critical_error_list.append('No records were extracted to process.')
-        # Fall through to return standard response structure
 
     for index, item_data_flat in enumerate(records_to_process):
-        current_item_name_for_error = f"Source Record Index {index + 1}" 
+        # Use 1-based indexing for user-facing messages
+        record_identifier_for_user = f"Record Index {index + 1}" 
+        item_name_value_for_error_msg = "Unknown Name" # Fallback if name cannot be determined early
+
         new_ingredient_attrs = {} 
         
         try:
-            # --- NAME PROCESSING ---
+            # Determine Name and update record_identifier_for_user early for better error messages
             name_source_key = mapping.get('name')
             item_name_value = None
             if name_source_key and name_source_key in item_data_flat:
                 item_name_value = item_data_flat[name_source_key]
             
             if not item_name_value: 
-                common_name_keys = ['name', 'Name', 'IngredientName', 'Material Name', 'Product Name', 
-                                    'calone_1951_firmenich', 'sulfurol_milky', 'lilial_replacer', 
-                                    'jasmacyclene_givaudan', 'orinox_pfw', 'ebanol_givaudan']
+                common_name_keys = ['name', 'Name', 'IngredientName', 'Material Name', 'Product Name'] # Simplified list
                 for key_try in common_name_keys:
                     if key_try in item_data_flat and item_data_flat[key_try]:
                         item_name_value = item_data_flat[key_try]; break
             
             if item_name_value and str(item_name_value).strip():
                 new_ingredient_attrs['name'] = str(item_name_value).strip()
-                current_item_name_for_error = f"Record '{new_ingredient_attrs['name']}' (Source Index {index + 1})"
+                item_name_value_for_error_msg = new_ingredient_attrs['name'] # Update for more specific error
+                record_identifier_for_user = f"Record '{item_name_value_for_error_msg}' (Index {index + 1})"
             else:
-                critical_error_list.append(f"{current_item_name_for_error}: Skipped - 'name' is missing, empty, or could not be auto-detected."); skipped_count += 1; continue
+                field_name_for_error = f"'{name_source_key}'" if name_source_key else "mapped 'Name'"
+                critical_error_list.append(f"{record_identifier_for_user}, Field {field_name_for_error}: Value is missing. This field is required. Record skipped."); 
+                skipped_count += 1; 
+                continue # Skip to next record
             
-            if Ingredient.query.filter_by(name=new_ingredient_attrs['name']).first():
-                critical_error_list.append(f"{current_item_name_for_error}: Skipped - Ingredient with this name already exists."); skipped_count += 1; continue
+            # Check for duplicates (this check is now more informed by the actual name)
+            if Ingredient.query.filter(Ingredient.name.ilike(new_ingredient_attrs['name'])).first():
+                critical_error_list.append(f"{record_identifier_for_user}: Skipped - Ingredient with this name already exists in the database."); 
+                skipped_count += 1; 
+                continue
             
-            # --- CORE ATTRIBUTE MAPPING ---
+            # Process other attributes
             for model_attr, source_key_suggestion in mapping.items():
                 if model_attr == 'name' or model_attr == '_categories_source_key_': continue 
                 
                 value_from_source = None
+                actual_source_key_used = None # To report the correct field name in errors
+
                 if source_key_suggestion and source_key_suggestion in item_data_flat:
                     value_from_source = item_data_flat[source_key_suggestion]
-                elif model_attr in item_data_flat: # Direct match if no suggestion or suggestion not found
+                    actual_source_key_used = source_key_suggestion
+                elif model_attr in item_data_flat: 
                     value_from_source = item_data_flat[model_attr]
+                    actual_source_key_used = model_attr
+                
+                field_name_for_error_reporting = f"'{actual_source_key_used}' (mapped to '{model_attr}')" if actual_source_key_used else f"'{model_attr}'"
+
 
                 if value_from_source is not None:
-                    if model_attr in ['cost_per_unit', 'stock_quantity', 'minimum_stock_threshold']:
-                        if str(value_from_source).strip() != '':
+                    if model_attr == 'unit_of_measurement':
+                        normalized_unit = normalize_unit_of_measurement(value_from_source)
+                        if normalized_unit != value_from_source and value_from_source: # Log if changed
+                             category_warning_list.append(f"{record_identifier_for_user}, Field {field_name_for_error_reporting}: Unit '{value_from_source}' normalized to '{normalized_unit}'.")
+                        new_ingredient_attrs[model_attr] = normalized_unit
+                    elif model_attr in ['cost_per_unit', 'stock_quantity', 'minimum_stock_threshold']:
+                        value_str_stripped = str(value_from_source).strip()
+                        if value_str_stripped != '':
                             try: 
-                                cleaned_value = re.sub(r'[^\d\.-]', '', str(value_from_source))
-                                if cleaned_value: new_ingredient_attrs[model_attr] = float(cleaned_value)
+                                cleaned_value_str = re.sub(r'[^\d\.-]', '', value_str_stripped)
+                                if cleaned_value_str: 
+                                    new_ingredient_attrs[model_attr] = float(cleaned_value_str)
+                                else: # Value became empty after cleaning non-numeric chars
+                                    category_warning_list.append(f"{record_identifier_for_user}, Field {field_name_for_error_reporting}: Value '{value_from_source}' became empty after removing non-numeric characters. Field left blank.")
                             except (ValueError, TypeError): 
-                                # This is a data issue for an imported ingredient, log as warning for now, or could be critical_error
-                                category_warning_list.append(f"{current_item_name_for_error}: Invalid numeric value '{value_from_source}' for '{model_attr}'. Field left blank.")
+                                critical_error_list.append(f"{record_identifier_for_user}, Field {field_name_for_error_reporting}: Value '{value_from_source}' is not a valid number. Record processing might be incomplete for this field.");
+                                # Decide if this should increment skipped_count or just be a warning
                     elif model_attr == 'ifra_restricted':
                         new_ingredient_attrs[model_attr] = str(value_from_source).lower().strip() in ['true', '1', 'yes', 'restricted']
                     else: 
                         new_ingredient_attrs[model_attr] = str(value_from_source).strip()
             
+            if 'unit_of_measurement' not in new_ingredient_attrs or not new_ingredient_attrs['unit_of_measurement']:
+                new_ingredient_attrs['unit_of_measurement'] = 'g' # Default if still not set
+
             ingredient = Ingredient(**new_ingredient_attrs)
             db.session.add(ingredient)
-            db.session.flush() # Get ID for category associations
+            db.session.flush() # Important: makes this ingredient visible to subsequent duplicate checks within this batch
 
-            # --- CATEGORY ASSIGNMENT ---
+            # Category assignment (remains largely the same, but error messages can use record_identifier_for_user)
             assigned_category_ids = set()
             source_field_for_categories = mapping.get('_categories_source_key_')
             if source_field_for_categories and source_field_for_categories in item_data_flat:
@@ -598,7 +595,7 @@ def process_import():
                      category_names_to_process = [str(cn).strip() for cn in category_data if str(cn).strip()]
 
                 for cat_name_raw in category_names_to_process:
-                    for cat_name in re.split(r'[&/,]', cat_name_raw):
+                    for cat_name in re.split(r'[&/,]', cat_name_raw): # Split by common delimiters
                         cat_name = cat_name.strip()
                         if not cat_name: continue
                         category_obj = Category.query.filter(Category.name.ilike(cat_name)).first() 
@@ -606,19 +603,15 @@ def process_import():
                             mapped_core_cat_name = KEYWORD_TO_CORE_CATEGORY.get(cat_name.lower())
                             if mapped_core_cat_name: category_obj = Category.query.filter(Category.name.ilike(mapped_core_cat_name)).first()
                             if not category_obj: 
-                                category_warning_list.append(f"{current_item_name_for_error}: Category '{cat_name}' (or its keyword map) not found."); continue 
+                                category_warning_list.append(f"{record_identifier_for_user}, Category '{cat_name}' (from source field '{source_field_for_categories}'): Not found or mapped."); continue 
                         if category_obj and category_obj.id not in assigned_category_ids:
                             ingredient.categories.append(category_obj); assigned_category_ids.add(category_obj.id)
             
             text_to_scan_combined = ""
-            for target_model_field in FIELDS_TO_SCAN_FOR_KEYWORDS:
-                source_key_for_scan = mapping.get(target_model_field)
-                field_content = None
-                if source_key_for_scan and source_key_for_scan in item_data_flat:
-                    field_content = item_data_flat[source_key_for_scan]
-                elif target_model_field in item_data_flat:
-                    field_content = item_data_flat[target_model_field]
-                if field_content is not None: text_to_scan_combined += " " + str(field_content).lower()
+            for target_model_field_for_keyword_scan in FIELDS_TO_SCAN_FOR_KEYWORDS:
+                source_key_for_keyword_scan = mapping.get(target_model_field_for_keyword_scan, target_model_field_for_keyword_scan) # Fallback to model field name
+                field_content_for_keywords = item_data_flat.get(source_key_for_keyword_scan)
+                if field_content_for_keywords is not None: text_to_scan_combined += " " + str(field_content_for_keywords).lower()
             
             if text_to_scan_combined.strip(): 
                 for keyword, core_category_name in KEYWORD_TO_CORE_CATEGORY.items():
@@ -627,57 +620,49 @@ def process_import():
                         core_category_obj = Category.query.filter(Category.name.ilike(core_category_name)).first()
                         if core_category_obj and core_category_obj.id not in assigned_category_ids:
                             ingredient.categories.append(core_category_obj); assigned_category_ids.add(core_category_obj.id)
-                        elif not core_category_obj:
-                             category_warning_list.append(f"{current_item_name_for_error}: Keyword '{keyword}' matched, but target category '{core_category_name}' not found.")
+                        elif not core_category_obj: # This means a core category defined in KEYWORD_TO_CORE_CATEGORY is missing from DB
+                             category_warning_list.append(f"{record_identifier_for_user}: Keyword '{keyword}' matched, but its target system category '{core_category_name}' is missing from the database.")
             
-            imported_count += 1 # Ingredient successfully processed and added to session
+            imported_count += 1
 
-        except Exception as e: # Catch any other unexpected error during this record's processing
-            # This implies a more severe issue with the record's data or logic
-            critical_error_list.append(f"Error processing record '{current_item_name_for_error}': {type(e).__name__} - {str(e)}. Record skipped.")
+        except Exception as e: 
+            # This is a catch-all for unexpected errors during a single record's processing
+            critical_error_list.append(f"Error processing {record_identifier_for_user}: {type(e).__name__} - {str(e)}. Record skipped.")
             skipped_count += 1
-            # db.session.rollback() # Not strictly needed here if final commit fails, it rolls all back.
-                                  # If we wanted to be super safe and this error was after add/flush,
-                                  # we might consider removing the specific 'ingredient' from session,
-                                  # but that's complex. Simpler to let final commit handle batch.
+            db.session.rollback() # Rollback changes for this specific failed record if absolutely necessary,
+                                  # but usually the final commit rollback is sufficient for batch atomicity.
+                                  # For now, we'll let the final commit handle it or rely on the continue.
             import traceback
-            print(f"--- UNEXPECTED ERROR PROCESSING RECORD: {current_item_name_for_error} ---")
+            print(f"--- UNEXPECTED ERROR PROCESSING RECORD: {record_identifier_for_user} ---")
             traceback.print_exc()
             print(f"--- END ERROR ---")
-            continue 
+            continue # Skip to the next record
             
-    # --- Attempt to commit the batch ---
-    if imported_count > 0 : # Only attempt commit if there are items to import
+    # Attempt to commit the entire batch of successfully processed ingredients
+    if imported_count > 0 : 
         try:
             db.session.commit()
         except Exception as e:
-            db.session.rollback()
-            commit_error_msg = f'Database commit failed: {str(e)}. All {imported_count} processed ingredients in this batch were rolled back.'
+            db.session.rollback() # Rollback the entire batch if commit fails
+            commit_error_msg = f'Database commit failed: {str(e)}. All {imported_count} potentially processed ingredients in this batch were rolled back.'
             print(f"Database commit error: {str(e)}") 
             critical_error_list.append(commit_error_msg)
             # Adjust counts as nothing was actually committed
-            skipped_count += imported_count # These are now considered skipped
+            skipped_count += imported_count 
             imported_count = 0
-            # The response will be built below, success will be false.
     
-    # --- Prepare final response ---
+    # Prepare final response
     final_success_flag = imported_count > 0 and not critical_error_list 
-    # If there was a commit error, critical_error_list will not be empty, making success false.
-
     final_message = f'Import finished. Imported: {imported_count}, Skipped: {skipped_count}.'
     if category_warning_list:
         final_message += f" {len(category_warning_list)} category assignment warning(s)."
     if critical_error_list:
         final_message += f" {len(critical_error_list)} critical error(s) encountered."
-    elif not records_to_process and not critical_error_list and not category_warning_list: # Edge case: empty file but no errors
+    elif not records_to_process and not critical_error_list and not category_warning_list: 
         final_message = "Import file was empty or contained no processable records."
 
-
     return jsonify({ 
-        'success': final_success_flag, 
-        'message': final_message, 
-        'imported_count': imported_count, 
-        'skipped_count': skipped_count, 
-        'errors': critical_error_list, 
-        'category_warnings': category_warning_list 
+        'success': final_success_flag, 'message': final_message, 
+        'imported_count': imported_count, 'skipped_count': skipped_count, 
+        'errors': critical_error_list, 'category_warnings': category_warning_list 
     })
